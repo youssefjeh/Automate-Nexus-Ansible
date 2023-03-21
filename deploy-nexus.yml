@@ -1,0 +1,45 @@
+---
+- name: Install java and net-tools
+  hosts: 16.171.59.149
+  become: true
+  tasks:
+    - name: Update apt repo and cache
+      apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+    - name: Install Java 11
+      apt: name=openjdk-11-jdk
+    - name: Install net-tools
+      apt: name=net-tools
+
+
+- name: Download and unpack Nexus Installer
+  hosts: 16.171.59.149
+  become: true
+  tasks:
+    - name: Download Nexus
+      get_url:
+        url: https://download.sonatype.com/nexus/3/latest-unix.tar.gz
+        dest: /opt/
+      register: download_result
+#    - debug: msg={{download_result}}
+    - name: Untar nexus Installer
+      unarchive:
+        src: "{{download_result.dest}}" #/opt/nexus-3.49.0-02-unix.tar.gz
+        dest: /opt/
+        remote_src: yes
+    - name: Find nexus folder
+      find: 
+        paths: /opt
+        pattern: "nexus-*"
+        file_type: directory
+      register: find_dir
+  # - debug: msg={{find_dir}}
+    - name: Check nexux folder stats
+      stat:
+        path: /opt/nexus
+      register: stat_result
+   # - debug: msg={{stat_result.stat.exists}}
+    - name: Rename nexus folder
+      shell: mv {{find_dir.files[0].path}} /opt/nexus #Accec list item with index ---> 0 index for firdt item
+      when: not stat_result.stat.exists
+
+        
