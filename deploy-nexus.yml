@@ -1,31 +1,40 @@
 ---
 - name: Install java and net-tools
-  hosts: 16.171.59.149
+  hosts: nexus_server
   become: true
   tasks:
     - name: Update apt repo and cache
       apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
     - name: Install Java 11
-      apt: name=openjdk-11-jdk
+      apt: name=openjdk-8-jdk
     - name: Install net-tools
       apt: name=net-tools
 
 
 - name: Download and unpack Nexus Installer
-  hosts: 16.171.59.149
+  hosts: nexus_server
   become: true
   tasks:
+    - name: Check nexus folder stats
+      stat:
+        path: /opt/nexus
+      register: stat_result
+   # - debug: msg={{stat_result.stat.exists}}
+
     - name: Download Nexus
       get_url:
         url: https://download.sonatype.com/nexus/3/latest-unix.tar.gz
         dest: /opt/
       register: download_result
 #    - debug: msg={{download_result}}
+
     - name: Untar nexus Installer
       unarchive:
         src: "{{download_result.dest}}" #/opt/nexus-3.49.0-02-unix.tar.gz
         dest: /opt/
         remote_src: yes
+      when: not stat_result.stat.exists
+
     - name: Find nexus folder
       find: 
         paths: /opt
@@ -33,13 +42,63 @@
         file_type: directory
       register: find_dir
   # - debug: msg={{find_dir}}
-    - name: Check nexux folder stats
-      stat:
-        path: /opt/nexus
-      register: stat_result
-   # - debug: msg={{stat_result.stat.exists}}
+
     - name: Rename nexus folder
       shell: mv {{find_dir.files[0].path}} /opt/nexus #Accec list item with index ---> 0 index for firdt item
       when: not stat_result.stat.exists
 
-        
+
+- name: Create nexus user to own nexus folders
+  become: true
+  hosts: nexus_server
+  tasks:
+    - name: Ensure grp nexus exists
+      group:
+        name: nexus
+        state: present
+    - name: Create nexus user
+      user:
+        name: nexus
+        group: nexus
+    - name: Make nexus user owner of nexus folder
+      file:
+        path: /opt/nexus
+        state: directory
+        owner: nexus
+        group: nexus
+        recurse: yes   #-R
+    - name: Make nexus user owner of sonatype-work folder
+      file:
+        path: /opt/sonatype-work
+        state: directory
+        owner: nexus
+        group: nexus
+        recurse: yes   #-R
+
+- name: Start nexus with nexsu user
+  become: true
+#  become_user: nexus
+  hosts: 16.170.133.14
+  tasks:
+    - name: Set run_as_user nexus
+      lineinfile:
+        path: /opt/nexus/bin/nexus.rc
+        regexp: '^#run_as_user=""'
+        line: run_as_user="nexus"
+    - name: Start nexus
+      command: /opt/nexus/bin/nexus start  #/opt/nexus/bin/nexus start
+
+
+- name: Verify nexus running
+  hosts: nexus_server
+  tasks:
+    - name: Check with ps 
+      shell: ps aux | grep nexus
+      register: app_status
+    - debug: msg= {{app_status.stdout_lines}}
+    - name: Check with netsat 
+      shell: netsat -lnpt
+      register: app_status
+    - debug: msg= {{app_status.stdout_lines}}
+    
+
